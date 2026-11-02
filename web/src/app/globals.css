@@ -1,0 +1,283 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/* shadcn components ship light and dark styles; the brand is light, so dark applies only under a .dark class. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Semantic colour roles. Values come from CSS variables so a wrapper can switch theme
+ * (src/lib/themes.ts → themeVars). :root carries the brand look: white pages, ink type and
+ * imakepage's gold, used as a fill only (it is too faint for text on white). Components use
+ * only these roles.
+ */
+:root {
+  --ground: #ffffff;
+  --surface: #f9fafb;
+  --ink: #111827;
+  --muted: #4b5563;
+  /* Meta text: dates, counts, captions (4.8:1 on white). */
+  --faint: #6b7280;
+  --rule: #e5e7eb;
+  --accent: #d4a843;
+  --accent-ink: #111827;
+  /* Gold as text or a focus ring on white: the deep gold reaches 5:1. */
+  --accent-text: #8a6a12;
+  --danger: #b42318;
+  /* Back-office steps: hovered rows, then pressed or selected. */
+  --raised: #f3f4f6;
+  --active: #e5e7eb;
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  /* Feedback motion (press, hover fills): better-ui's 150ms. */
+  --dur: 150ms;
+
+  /*
+   * shadcn/ui roles, pointed at ours. shadcn's own "muted" and "accent" names clash with ours
+   * (text grey and bronze), so its components were edited to use raised/ink/muted instead.
+   */
+  --background: var(--ground);
+  --foreground: var(--ink);
+  --popover: var(--ground);
+  --popover-foreground: var(--ink);
+  --primary: var(--ink);
+  --primary-foreground: var(--ground);
+  --destructive: var(--danger);
+  --border: var(--rule);
+  /* Field outlines at 3:1 on white, so a field reads as a field. */
+  --input: #8c939e;
+  --ring: var(--accent-text);
+  /* Buttons 8px, cards 12px. */
+  --radius: 0.5rem;
+}
+
+@theme inline {
+  --color-ground: var(--ground);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-rule: var(--rule);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-text: var(--accent-text);
+  --color-danger: var(--danger);
+  --color-raised: var(--raised);
+  --color-active: var(--active);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+
+
+  --font-sans: var(--font-inter);
+
+  /* Five type steps for the marketing pages (taste-skill: about five sizes a page). */
+  --text-small: 0.9375rem;
+  --text-small--line-height: 1.45;
+  --text-body: 1.125rem;
+  --text-body--line-height: 1.55;
+  --text-lead: 1.5rem;
+  --text-lead--line-height: 1.3;
+  --text-head: clamp(1.75rem, 1.2rem + 1.6vw, 2.5rem);
+  --text-head--line-height: 1.12;
+  --text-display: clamp(2.5rem, 1.2rem + 4vw, 4.5rem);
+  --text-display--line-height: 1.04;
+}
+
+html {
+  /* Keep focused fields and anchors clear of the sticky headers. */
+  scroll-padding-top: 6rem;
+}
+
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+}
+
+p {
+  text-wrap: pretty;
+}
+
+a,
+button,
+summary,
+select,
+input,
+textarea,
+label {
+  touch-action: manipulation;
+}
+
+body {
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--font-inter), system-ui, sans-serif;
+}
+
+/* Prices and specs: lining figures, normal comma spacing. */
+.figures {
+  font-variant-numeric: lining-nums;
+}
+
+/* Counts that stack in a column line up. */
+.figures-col {
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+@keyframes fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* The how-it-works slider: a solid track, the passed part in full ink, a square accent thumb. */
+.stage-slider {
+  appearance: none;
+  height: 2.5rem;
+  background: transparent;
+  cursor: pointer;
+}
+.stage-slider::-webkit-slider-runnable-track {
+  height: 8px;
+  background: var(--rule);
+}
+.stage-slider::-moz-range-track {
+  height: 8px;
+  background: var(--rule);
+}
+.stage-slider::-moz-range-progress {
+  height: 8px;
+  background: var(--ink);
+}
+.stage-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 32px;
+  height: 32px;
+  margin-top: -12px;
+  background: var(--accent);
+  border: 0;
+}
+.stage-slider::-moz-range-thumb {
+  width: 32px;
+  height: 32px;
+  background: var(--accent);
+  border: 0;
+  border-radius: 0;
+}
+@media (pointer: coarse) {
+  .stage-slider::-webkit-slider-thumb { width: 40px; height: 40px; margin-top: -16px; }
+  .stage-slider::-moz-range-thumb { width: 40px; height: 40px; }
+}
+
+/* Section entrances (marketing pages). Hidden only once the script has marked the page ready. */
+[data-enter] {
+  transition-property: opacity, translate, filter;
+  transition-duration: 300ms;
+  transition-timing-function: var(--ease-out);
+}
+html.motion-ready [data-enter]:not(.is-in) {
+  opacity: 0;
+  translate: 0 12px;
+  filter: blur(4px);
+}
+@media (prefers-reduced-motion: reduce) {
+  html.motion-ready [data-enter]:not(.is-in) {
+    opacity: 1;
+    translate: none;
+    filter: none;
+  }
+}
+
+/* Press feedback on buttons: scale to 0.96 over 150ms, never when disabled. */
+.press {
+  transition-property: scale, background-color, filter;
+  transition-duration: var(--dur);
+  -webkit-tap-highlight-color: transparent;
+  transition-timing-function: ease-out;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .press:not(:disabled):active {
+    scale: 0.96;
+  }
+}
+
+/* The page's one moving picture: a slow drift on the skyline. */
+@keyframes drift {
+  from { scale: 1.06; }
+  to { scale: 1; }
+}
+/* It settles once and stays: nothing on the page moves for more than five seconds (WCAG 2.2.2). */
+@media (prefers-reduced-motion: no-preference) {
+  .drift {
+    animation: drift 4.5s var(--ease-out) 1 both;
+  }
+}
+/* Looping motion rests while it is off screen (set by the Motion component). */
+.drift.is-offscreen,
+.caret-blink.is-offscreen {
+  animation-play-state: paused;
+}
+
+/*
+ * Stacking: Leaflet's map panes and controls use 400-1000, so the layers that must sit above
+ * the search map are fixed values: filter bar 999, site header 1000, skip link 2000.
+ * Back-office layers stay low: sticky bar 30, phone bottom bar 40, overlays 50 (shadcn).
+ */
+
+/* The logo's block cursor. */
+@keyframes caret {
+  0%, 55% { opacity: 1; }
+  56%, 100% { opacity: 0; }
+}
+
+/* Four blinks, then the cursor rests solid (under five seconds, WCAG 2.2.2). */
+.caret-blink {
+  animation: caret 1.1s steps(1) 4;
+}
+@media (prefers-reduced-motion: reduce) {
+  .caret-blink {
+    animation: none;
+  }
+}
+
+/* Visible keyboard focus everywhere. */
+:focus-visible {
+  outline: 2px solid var(--accent-text);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+.leaflet-container {
+  font-family: inherit;
+}
+.leaflet-container .leaflet-control-attribution {
+  font-size: 13px;
+}
+.leaflet-container .leaflet-control-zoom a {
+  font-family: inherit;
+}
+
+/* The name field inside the landing headline grows with what is typed (size= is the fallback). */
+.headline-field {
+  field-sizing: content;
+  min-width: 4ch;
+}
