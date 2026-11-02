@@ -1,0 +1,9 @@
+{
+  "basicMemory": {
+    "checkpointOnCompact": false,
+    "primaryProject": "imakepage-rebuild",
+    "captureFolder": "checkpoints",
+    "secondaryProjects": ["owner"],
+    "captureEvents": false
+  }
+}

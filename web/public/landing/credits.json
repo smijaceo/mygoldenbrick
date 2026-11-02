@@ -1,0 +1,6 @@
+[
+  { "file": "home-dusk.jpg", "source": "https://images.unsplash.com/photo-1568605114967-8130f3a36994", "license": "Unsplash License", "via": "Unsplash", "note": "Also the default hero image for new sign-ups" },
+  { "file": "home-modern.jpg", "source": "https://images.unsplash.com/photo-1600585154340-be6161a56a0c", "license": "Unsplash License", "via": "Unsplash" },
+  { "file": "home-shingle.jpg", "source": "https://images.unsplash.com/photo-1570129477492-45c003edd2be", "license": "Unsplash License", "via": "Unsplash" },
+  { "file": "site-*.jpg, app-*.jpg", "source": "Captures of this project's demo site and back office", "note": "The agent, buyers and listings are fictional; back-office captures are cropped to the content area" }
+]

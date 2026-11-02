@@ -1,2 +1,29 @@
 # Generated design-inspector screenshots and reports
 .taste-skill/
+
+# Never commit these, wherever they appear (web/.gitignore has the app's own list)
+node_modules/
+.next/
+out/
+build/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+
+# Credentials and local configuration
+.env*
+*.pem
+*.key
+.mcp.json
+
+# Local databases
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+data/
+
+# Logs
+*.log
+logs/
