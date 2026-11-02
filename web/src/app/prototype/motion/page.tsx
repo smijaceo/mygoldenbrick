@@ -9,7 +9,7 @@ const shoulders = Big_Shoulders({ subsets: ["latin", "latin-ext"], variable: "--
 const caslon = Libre_Caslon_Display({ subsets: ["latin"], variable: "--font-caslon", weight: "400" });
 
 export const metadata: Metadata = {
-  title: { absolute: "My Golden Brick: motion prototype" },
+  title: { absolute: "My Golden Brick: build on your name" },
   description: "Build on your name. A real estate website, and one place for every buyer inquiry.",
   robots: { index: false, follow: false },
 };

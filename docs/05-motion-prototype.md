@@ -1,6 +1,6 @@
 # My Golden Brick motion prototype
 
-Route: `/prototype/motion`. Disposable, for visual review. Full landing page integration waits on that review.
+Route: `/prototype/motion`, also served at `/` by a rewrite in `web/next.config.ts`. Disposable, for visual review. Full landing page integration waits on that review.
 
 ## The idea
 
