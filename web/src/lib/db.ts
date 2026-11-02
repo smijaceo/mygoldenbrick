@@ -1,6 +1,7 @@
 import "server-only";
 import { DatabaseSync } from "node:sqlite";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { seedIfEmpty } from "./seed";
 import { migrate } from "./schema";
@@ -8,7 +9,9 @@ import { migrate } from "./schema";
 const globalForDb = globalThis as unknown as { __db?: DatabaseSync };
 
 function open(): DatabaseSync {
-  const dir = path.join(process.cwd(), "data");
+  // Vercel's servers can only write to temp space, and each one rebuilds its database from the
+  // sample data when it starts. Fine for a preview; anything saved there will not last.
+  const dir = process.env.VERCEL ? path.join(os.tmpdir(), "app-data") : path.join(process.cwd(), "data");
   fs.mkdirSync(dir, { recursive: true });
   const db = new DatabaseSync(path.join(dir, "app.db"));
   db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
