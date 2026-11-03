@@ -20,7 +20,8 @@ import {
   terrain,
   type Tier,
 } from "./field";
-import { BLOOM_DOWN_FS, BLOOM_UP_FS, BRICK_FS, BRICK_VS, COMPOSITE_FS, LIGHT_FS, SKY_FS, TRIANGLE_VS } from "./shaders";
+import { FIGURE_HALF_WIDTH, FIGURE_ROWS, VOXEL, brickInHands, buildFigure, figureAt, idlePose, planFor, poseAt } from "./figure";
+import { BLOOM_DOWN_FS, BLOOM_UP_FS, BRICK_FS, BRICK_VS, COMPOSITE_FS, FIGURE_FS, FIGURE_VS, LIGHT_FS, SKY_FS, TRIANGLE_VS } from "./shaders";
 
 type Vec3 = [number, number, number];
 type Program = { program: WebGLProgram; u: Record<string, WebGLUniformLocation | null> };
@@ -43,7 +44,7 @@ export type Engine = {
   skipIntro(): void;
   resize(): void;
   destroy(): void;
-  stats(): { fps: number; p95: number; scale: number; bricks: number; frames: number; simMs: number; initMs: { shaders: number; field: number; firstDraw: number } };
+  stats(): { fps: number; p95: number; scale: number; bricks: number; frames: number; simMs: number; initMs: { shaders: number; field: number; firstDraw: number }; errand: number; errandHold: number; figureBlocks: number };
 };
 
 export type EngineOptions = {
@@ -64,6 +65,8 @@ const OVERHEAD_Y = 90;
 const TAN_HALF = Math.tan(((FOV_NEAR / 2) * Math.PI) / 180);
 const SUN: Vec3 = normalize([0.46, 0.17, -0.87]);
 const GROUND_BASE = -3;
+/** The way the gold brick lies when it comes to rest. */
+const HERO_YAW = -0.34;
 
 function normalize(v: Vec3): Vec3 {
   const l = Math.hypot(v[0], v[1], v[2]) || 1;
@@ -158,6 +161,30 @@ function brickGeometry() {
   const down: Vec3 = [0, -1, 0];
   quad(add(-1, -1, 0, 0, 0, down, 2), add(1, -1, 0, 0, 0, down, 2), add(1, 1, 0, 0, 0, down, 2), add(-1, 1, 0, 0, 0, down, 2));
   return { verts: new Float32Array(verts), indices: new Uint16Array(indices) };
+}
+
+/** One block of the figure: a plain cube, with coordinates across each face for its joints. */
+function cubeGeometry() {
+  const out: number[] = [];
+  const faces: [number[], number[], number[]][] = [
+    [[0, 0, 1], [1, 0, 0], [0, 1, 0]],
+    [[0, 0, -1], [-1, 0, 0], [0, 1, 0]],
+    [[1, 0, 0], [0, 0, -1], [0, 1, 0]],
+    [[-1, 0, 0], [0, 0, 1], [0, 1, 0]],
+    [[0, 1, 0], [1, 0, 0], [0, 0, -1]],
+    [[0, -1, 0], [1, 0, 0], [0, 0, 1]],
+  ];
+  for (const [n, u, v] of faces) {
+    const corner = (s: number, t: number) => {
+      out.push(
+        (n[0] + u[0] * s + v[0] * t) / 2, (n[1] + u[1] * s + v[1] * t) / 2, (n[2] + u[2] * s + v[2] * t) / 2,
+        n[0], n[1], n[2], (s + 1) / 2, (t + 1) / 2,
+      );
+    };
+    corner(-1, -1); corner(1, -1); corner(1, 1);
+    corner(-1, -1); corner(1, 1); corner(-1, 1);
+  }
+  return new Float32Array(out);
 }
 
 /** Starts compiling. Nothing here waits, so the page stays responsive while the driver works. */
@@ -281,10 +308,11 @@ export async function createEngine(opts: EngineOptions): Promise<Engine> {
     startProgram(gl, TRIANGLE_VS, BLOOM_DOWN_FS),
     startProgram(gl, TRIANGLE_VS, BLOOM_UP_FS),
     startProgram(gl, TRIANGLE_VS, COMPOSITE_FS),
+    startProgram(gl, FIGURE_VS, FIGURE_FS),
   ];
   await programsReady(gl, compiling.map((c) => c.program));
   if (opts.cancelled?.()) throw new Error("Cancelled");
-  const [brickProgram, skyProgram, lightProgram, downProgram, upProgram, compositeProgram] = compiling.map((c) => finishProgram(gl, c));
+  const [brickProgram, skyProgram, lightProgram, downProgram, upProgram, compositeProgram, figureProgram] = compiling.map((c) => finishProgram(gl, c));
   const emptyVao = gl.createVertexArray()!;
 
   const compiledAt = performance.now();
@@ -305,6 +333,7 @@ export async function createEngine(opts: EngineOptions): Promise<Engine> {
 
   const houses = buildHouses(spec);
   const heroAt = opts.canvas.clientWidth >= opts.canvas.clientHeight ? { x: 12, z: 30 } : { x: 1.5, z: 34 };
+  const standAt = figureAt(opts.canvas.clientWidth >= opts.canvas.clientHeight);
 
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
@@ -417,6 +446,53 @@ export async function createEngine(opts: EngineOptions): Promise<Engine> {
   const farVao = bindBrickVao(staticBuffer(farList), staticBuffer(farHeights), staticBuffer(farFlags));
   const heroVao = bindBrickVao(staticBuffer([0, 0, 0.5]), staticBuffer([0]), staticBuffer([0, 1]));
 
+  /* ---------- The block figure ---------- */
+  const figureVoxels = buildFigure();
+  const figureVao = gl.createVertexArray()!;
+  {
+    gl.bindVertexArray(figureVao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+    gl.bufferData(gl.ARRAY_BUFFER, cubeGeometry(), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 8 * 4, 0);
+    gl.enableVertexAttribArray(1);
+    gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 8 * 4, 3 * 4);
+    gl.enableVertexAttribArray(2);
+    gl.vertexAttribPointer(2, 2, gl.FLOAT, false, 8 * 4, 6 * 4);
+    const data = new Float32Array(figureVoxels.length * 12);
+    figureVoxels.forEach((v, i) => {
+      data.set([v.x, v.y, v.z, v.color[0], v.color[1], v.color[2], v.occlusion, v.part, v.seed, v.from.x, v.from.y, v.from.z], i * 12);
+    });
+    gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+    gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(3);
+    gl.vertexAttribPointer(3, 3, gl.FLOAT, false, 12 * 4, 0);
+    gl.vertexAttribDivisor(3, 1);
+    gl.enableVertexAttribArray(4);
+    gl.vertexAttribPointer(4, 4, gl.FLOAT, false, 12 * 4, 3 * 4);
+    gl.vertexAttribDivisor(4, 1);
+    gl.enableVertexAttribArray(5);
+    gl.vertexAttribPointer(5, 2, gl.FLOAT, false, 12 * 4, 7 * 4);
+    gl.vertexAttribDivisor(5, 1);
+    gl.enableVertexAttribArray(6);
+    gl.vertexAttribPointer(6, 3, gl.FLOAT, false, 12 * 4, 9 * 4);
+    gl.vertexAttribDivisor(6, 1);
+    gl.bindVertexArray(null);
+  }
+  const cellUnder = (x: number, z: number) => {
+    const r = Math.max(0, Math.min(rows - 1, Math.round((z - spec.minZ) / BRICK_D - 0.5)));
+    const c = Math.max(0, Math.min(cols - 1, Math.round((x - spec.minX) / BRICK_W - 0.5 - (r % 2) * 0.5)));
+    return r * cols + c;
+  };
+  const stance = { y: 0, sway: 0, lookX: 0, lookY: 0 };
+  const plan = planFor(standAt, heroAt, HERO_YAW);
+  const idle = idlePose(standAt);
+  /** Walking over, lifting the brick and bringing it back. A time of -1 means he's at rest. */
+  const errand = { t: -1, hovering: false, autoPlayed: opts.intro !== "play", lastStep: 0 };
+  let figureBox = { centre: 0, top: 0, bottom: 0, half: 0 };
+  const onFigure = (x: number, y: number) =>
+    figureBox.half > 0 && y >= figureBox.top && y <= figureBox.bottom && Math.abs(x - figureBox.centre) <= figureBox.half;
+
   /* ---------- Height map and the lighting worked out from it ---------- */
   const heightTex = gl.createTexture()!;
   gl.bindTexture(gl.TEXTURE_2D, heightTex);
@@ -526,7 +602,7 @@ export async function createEngine(opts: EngineOptions): Promise<Engine> {
   let plotA: [number, number, number, number] = [0, 0, 0, 0];
   let plotB: [number, number, number, number] = [0, 0, 0, 0];
   const gold = { flightX: 0, flightZ: 0, flightOn: 0, pulse: 0 };
-  const pointer = { x: 0, y: 0, nx: 0, ny: 0, sx: 0, sy: 0, active: false, moved: 0 };
+  const pointer = { x: 0, y: 0, nx: 0, ny: 0, sx: 0, sy: 0, active: false, moved: 0, overControl: false };
   let invVP = new Float32Array(16);
   let camEye: Vec3 = [0, 0, 0];
   const frameTimes: number[] = [];
@@ -587,7 +663,9 @@ export async function createEngine(opts: EngineOptions): Promise<Engine> {
       const x = brick[i * 3];
       const z = brick[i * 3 + 1];
       const hit = sample(x - 0.5, z) + sample(x + 0.5, z) + sample(x, z - 0.25) + sample(x, z + 0.25);
-      const on = hit > 4 * 110 ? 1 : 0;
+      // No letter rises through the man standing there.
+      const clear = Math.abs(x - standAt.x) > 5 || Math.abs(z - standAt.z) > 3.5;
+      const on = hit > 4 * 110 && clear ? 1 : 0;
       nameMask[i] = on;
       if (on) {
         nameCells.push(i);
@@ -676,7 +754,7 @@ export async function createEngine(opts: EngineOptions): Promise<Engine> {
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   };
 
-  const heroMatrix = (y: number, tilt: number, yaw: number) => {
+  const heroMatrix = (x: number, y: number, z: number, tilt: number, yaw: number) => {
     const size = 2.3;
     const ca = Math.cos(yaw);
     const sa = Math.sin(yaw);
@@ -687,7 +765,7 @@ export async function createEngine(opts: EngineOptions): Promise<Engine> {
       ca * size, 0, -sa * size, 0,
       sa * st * size, ct * size, ca * st * size, 0,
       sa * ct * size, -st * size, ca * ct * size, 0,
-      heroAt.x, y, heroAt.z, 1,
+      x, y, z, 1,
     ]);
   };
 
@@ -776,6 +854,43 @@ export async function createEngine(opts: EngineOptions): Promise<Engine> {
     gl.enable(gl.CULL_FACE);
     gl.cullFace(gl.BACK);
 
+    /* What he's doing, worked out first because the bricks take his shadow and the brick's light */
+    const figureBuilt = introHeld ? 0 : smoothstep(1.3, 3.2, introTime);
+    if (!still) {
+      if (!errand.autoPlayed && introTime > 4.4) {
+        errand.autoPlayed = true;
+        // Once by himself after the opening, unless the visitor has already moved on.
+        if (errand.t < 0 && smooth.q < 0.05 && !name.trim()) errand.t = 0;
+      }
+      const over = pointer.active && !pointer.overControl && onFigure(pointer.x, pointer.y);
+      if (over && !errand.hovering && errand.t < 0) errand.t = 0;
+      errand.hovering = over;
+      if (errand.t >= 0) {
+        const before = errand.t;
+        errand.t += dt;
+        // Up there for as long as the pointer stays on him.
+        if (over && before <= plan.holdEnd && errand.t > plan.holdEnd) errand.t = plan.holdEnd;
+        if (before < plan.landAt && errand.t >= plan.landAt) {
+          const spot = poseAt(plan, plan.landAt);
+          impulse(spot.x, spot.z, 5, -16);
+          impulse(spot.x, spot.z, 13, 6);
+          gold.pulse = Math.max(gold.pulse, 0.7);
+        }
+        if (errand.t >= plan.end) errand.t = -1;
+      }
+    }
+    const doing = errand.t >= 0;
+    const pose = doing ? poseAt(plan, errand.t) : idle;
+    // Each footfall presses the bricks down a little.
+    const footfall = Math.floor(pose.stride / Math.PI);
+    if (footfall !== errand.lastStep) {
+      errand.lastStep = footfall;
+      if (pose.walking > 0.5) impulse(pose.x, pose.z, 2.4, -3.5);
+    }
+    // He stands on whatever the bricks under him are doing, so a ripple lifts him too.
+    const groundY = Math.max(0, h[cellUnder(pose.x, pose.z)]);
+    stance.y = still ? groundY : stance.y + (groundY - stance.y) * (1 - Math.exp(-dt * 12));
+
     const p = brickProgram;
     const windowsOn = smoothstep(2.0, 6.0, introTime) * (0.5 + 0.5 * smooth.night);
     gl.useProgram(p.program);
@@ -789,6 +904,7 @@ export async function createEngine(opts: EngineOptions): Promise<Engine> {
     gl.uniform1f(p.u.uNameTint, smooth.nameTint * Math.max(smooth.typed, smoothstep(0.25, 0.7, q)));
     gl.uniform1f(p.u.uFog, 1 / 400);
     gl.uniform1f(p.u.uFarRise, smoothstep(1.7, 4.6, introTime));
+    gl.uniform4f(p.u.uFigure, pose.x, pose.z, FIGURE_ROWS * VOXEL + pose.lift * 2.6, figureBuilt);
     gl.uniform1f(p.u.uBase, GROUND_BASE);
     gl.uniform4fv(p.u.uPlotA, plotA);
     gl.uniform4fv(p.u.uPlotB, plotB);
@@ -811,7 +927,15 @@ export async function createEngine(opts: EngineOptions): Promise<Engine> {
     const settle = landed ? Math.max(0, Math.exp(-(introTime - 1.25) * 6) * Math.sin((introTime - 1.25) * 16)) * 0.5 : 0;
     const heroY = 0.76 + dropY + settle;
     const heroLight = visible ? 0.9 + Math.sin(time * 0.9) * 0.08 + gold.pulse * 3 : 0;
-    gl.uniform4f(p.u.uGoldA, heroAt.x, heroY + 1.2, heroAt.z, heroLight);
+    const held = brickInHands(pose);
+    const brickPos = {
+      x: heroAt.x + (held.x - heroAt.x) * pose.grip,
+      y: heroY + (held.y + stance.y + pose.hop - heroY) * pose.grip,
+      z: heroAt.z + (held.z - heroAt.z) * pose.grip,
+    };
+    // Held high, it lights him and the ground from above, so it has to burn brighter to reach.
+    const goldLight = heroLight * (1 + pose.lift * 2.4);
+    gl.uniform4f(p.u.uGoldA, brickPos.x, brickPos.y + 1.2, brickPos.z, goldLight);
     if (gold.flightOn > 0.001) {
       gl.uniform4f(p.u.uGoldB, gold.flightX, 7, gold.flightZ, gold.flightOn * 2.4);
     } else {
@@ -837,12 +961,78 @@ export async function createEngine(opts: EngineOptions): Promise<Engine> {
 
     if (visible) {
       const tilt = landed ? 0 : (1 - fall) * 1.2;
-      const yaw = -0.34 + (landed ? 0 : (1 - fall) * 2.2);
+      const yaw = HERO_YAW + (landed ? 0 : (1 - fall) * 2.2);
       gl.uniform1f(p.u.uHero, 1);
       gl.uniform1f(p.u.uFar, 1);
-      gl.uniformMatrix4fv(p.u.uModel, false, heroMatrix(heroY, tilt, yaw));
+      gl.uniformMatrix4fv(p.u.uModel, false, heroMatrix(brickPos.x, brickPos.y, brickPos.z, tilt, yaw));
       gl.bindVertexArray(heroVao);
       gl.drawElementsInstanced(gl.TRIANGLES, geometry.indices.length, gl.UNSIGNED_SHORT, 0, 1);
+    }
+
+    if (figureBuilt > 0) {
+      // He glances at the gold brick when it lands, then follows the visitor's pointer.
+      const sinceLanding = introTime - 1.25;
+      let lookX = pose.lookX;
+      let lookY = pose.lookY;
+      if (!still && !doing) {
+        if (sinceLanding > 0 && sinceLanding < 4.5) {
+          lookX = heroAt.x > standAt.x ? 0.52 : -0.52;
+          lookY = 0.16;
+        } else if (pointer.active) {
+          lookX = pointer.sx * 0.5;
+          lookY = pointer.sy * 0.16;
+        } else {
+          lookX = Math.sin(time * 0.31) * 0.26;
+          lookY = Math.sin(time * 0.19) * 0.04;
+        }
+      }
+      if (!still) {
+        stance.lookX += (lookX - stance.lookX) * (1 - Math.exp(-dt * 3.2));
+        stance.lookY += (lookY - stance.lookY) * (1 - Math.exp(-dt * 3.2));
+        stance.sway = Math.sin(time * 0.21) * 0.035 * (doing ? 0 : 1);
+      }
+      const f = figureProgram;
+      gl.useProgram(f.program);
+      gl.uniformMatrix4fv(f.u.uVP, false, vp);
+      gl.uniform3f(f.u.uAt, pose.x, stance.y + pose.hop, pose.z);
+      gl.uniform1f(f.u.uVoxel, VOXEL);
+      gl.uniform1f(f.u.uRows, FIGURE_ROWS);
+      gl.uniform1f(f.u.uBuild, figureBuilt);
+      gl.uniform1f(f.u.uBreath, still ? 0 : Math.sin(time * 1.35) * 0.14);
+      gl.uniform1f(f.u.uBlink, !still && (time % 4.7) < 0.13 ? 1 : 0);
+      gl.uniform1f(f.u.uYaw, pose.yaw + stance.sway);
+      gl.uniform3f(f.u.uLook, stance.lookX, stance.lookY, 0);
+      gl.uniform1f(f.u.uBend, pose.bend);
+      gl.uniform1f(f.u.uFree, pose.free);
+      gl.uniform1f(f.u.uShrug, pose.shrug);
+      gl.uniform1f(f.u.uInward, pose.inward);
+      gl.uniform2f(f.u.uArms, pose.armRight, pose.armLeft);
+      gl.uniform2f(f.u.uLegs, pose.legRight, pose.legLeft);
+      gl.uniform3fv(f.u.uCam, eye);
+      gl.uniform3fv(f.u.uSun, SUN);
+      gl.uniform1f(f.u.uNight, smooth.night);
+      gl.uniform1f(f.u.uFog, 1 / 400);
+      // Right above his head the same light would burn him out, so he takes only some of it.
+      gl.uniform4f(f.u.uGoldA, brickPos.x, brickPos.y + 1.2, brickPos.z, Math.min(heroLight, 1.2) * (1 - 0.74 * pose.lift));
+      if (gold.flightOn > 0.001) gl.uniform4f(f.u.uGoldB, gold.flightX, 7, gold.flightZ, gold.flightOn * 2.4);
+      else gl.uniform4f(f.u.uGoldB, 0, 0, 0, 0);
+      gl.bindVertexArray(figureVao);
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, 36, figureVoxels.length);
+
+      // Where he is on screen, so a pointer can find him.
+      const toScreen = (y: number) => {
+        const w = vp[3] * pose.x + vp[7] * y + vp[11] * pose.z + vp[15];
+        return {
+          x: (((vp[0] * pose.x + vp[4] * y + vp[8] * pose.z + vp[12]) / w + 1) / 2) * cssW,
+          y: ((1 - (vp[1] * pose.x + vp[5] * y + vp[9] * pose.z + vp[13]) / w) / 2) * cssH,
+        };
+      };
+      const feet = toScreen(stance.y);
+      const crown = toScreen(stance.y + FIGURE_ROWS * VOXEL);
+      const span = Math.abs(feet.y - crown.y);
+      figureBox = figureBuilt > 0.6
+        ? { centre: (feet.x + crown.x) / 2, top: Math.min(feet.y, crown.y), bottom: Math.max(feet.y, crown.y), half: span * FIGURE_HALF_WIDTH }
+        : { centre: 0, top: 0, bottom: 0, half: 0 };
     }
 
     gl.disable(gl.CULL_FACE);
@@ -1059,10 +1249,15 @@ export async function createEngine(opts: EngineOptions): Promise<Engine> {
     pointer.ny = (e.clientY / cssH) * 2 - 1;
     pointer.active = true;
     pointer.moved = Math.min(240, pointer.moved + Math.hypot(dx, dy));
+    pointer.overControl = !!(e.target as HTMLElement | null)?.closest("a, button, input, textarea, select, label, [data-panel]");
   };
   const onPointerDown = (e: PointerEvent) => {
     const el = e.target as HTMLElement | null;
     if (el?.closest("a, button, input, textarea, select, label, [data-panel]")) return;
+    if (!still && onFigure(e.clientX, e.clientY)) {
+      if (errand.t < 0) errand.t = 0;
+      return;
+    }
     if (still || smooth.q >= 1.4) return;
     const hit = groundAt(e.clientX, e.clientY);
     if (hit) impulse(hit[0], hit[1], 6, 18);
@@ -1187,6 +1382,9 @@ export async function createEngine(opts: EngineOptions): Promise<Engine> {
         frames,
         simMs: Math.round(simMs * 100) / 100,
         initMs: { shaders: Math.round(compiledAt - initStart), field: Math.round(builtAt - compiledAt), firstDraw: Math.round(firstDrawMs) },
+        errand: Math.round(errand.t * 100) / 100,
+        errandHold: Math.round(plan.holdEnd * 100) / 100,
+        figureBlocks: figureVoxels.length,
       };
     },
   };

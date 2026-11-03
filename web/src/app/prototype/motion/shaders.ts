@@ -1,3 +1,5 @@
+import { HIP_ROW, NECK_ROW, SHOULDER_ROW, SHOULDER_X } from "./figure";
+
 /**
  * The look of the world. Colours here are linear light, so values above 1 are fine: the
  * final pass adds glow to whatever is brightest, then maps it all down to the screen.
@@ -33,6 +35,19 @@ float vnoise(vec2 p) {
   vec2 f = fract(p);
   f = f * f * (3.0 - 2.0 * f);
   return mix(mix(hash12(i), hash12(i + vec2(1, 0)), f.x), mix(hash12(i + vec2(0, 1)), hash12(i + vec2(1, 1)), f.x), f.y);
+}
+`;
+
+const HAZE = /* glsl */ `
+uniform float uFog;
+// Haze thickens with distance and pools low to the ground.
+vec3 withHaze(vec3 col, vec3 V, float dist, float y) {
+  vec3 dir = -V;
+  vec3 hazeDir = normalize(vec3(dir.x, max(dir.y, 0.015), dir.z));
+  float height = exp(-max(y, 0.0) * 0.045);
+  float column = 1.0 - smoothstep(0.08, 0.5, -dir.y);
+  float fog = (1.0 - exp(-pow(dist * uFog, 1.7) * (0.55 + 0.45 * height))) * (0.08 + 0.92 * column);
+  return mix(col, skyColor(hazeDir), clamp(fog, 0.0, 1.0));
 }
 `;
 
@@ -185,12 +200,29 @@ uniform vec4 uGoldB;
 uniform float uWindows;
 uniform float uNameTint;
 uniform float uFar;
-uniform float uFog;
 uniform float uTime;
+uniform vec4 uFigure;  // where he stands (x, z), his height, how much of him is built
 out vec4 outColor;
 ${SKY}
+${HAZE}
 ${NOISE}
 const vec3 GOLD = vec3(1.0, 0.70, 0.27);
+
+// The figure's long shadow, worked out directly: he is too slim for the height map's steps to
+// catch. Wide at the shoulders, narrow at the legs and head, softer the further it falls.
+float figureShade(vec2 p) {
+  vec2 away = -normalize(uSun.xz);
+  vec2 r = p - uFigure.xy;
+  float along = dot(r, away);
+  float t = along / (uFigure.z * length(uSun.xz) / uSun.y);
+  if (t < -0.02 || t > 1.1) return 1.0;
+  float across = abs(r.x * away.y - r.y * away.x);
+  float width = mix(mix(1.9, 3.1, smoothstep(0.3, 0.36, t)), 1.7, smoothstep(0.6, 0.66, t));
+  float blur = 0.3 + along * 0.02;
+  float inside = 1.0 - smoothstep(width - blur, width + blur, across);
+  float ends = smoothstep(-0.02, 0.0, t) * (1.0 - smoothstep(0.94, 1.08, t));
+  return 1.0 - inside * ends * mix(0.8, 0.3, clamp(t * 1.4, 0.0, 1.0)) * uFigure.w;
+}
 
 vec3 goldSurface(vec3 N, vec3 V, float ndv, vec3 P) {
   vec3 R = reflect(-V, N);
@@ -226,6 +258,13 @@ void main() {
   vec2 lit = uFar > 0.5 ? vec2(1.0, 0.82) : texture(uLight, lookup).rg;
   float shadow = lit.r;
   float ao = lit.g;
+  float figureShadow = 1.0;
+  if (uFar < 0.5 && uFigure.w > 0.0) {
+    figureShadow = figureShade(vP.xz);
+    shadow *= figureShadow;
+    vec2 fromFeet = vP.xz - uFigure.xy;
+    ao *= 1.0 - 0.6 * exp(-dot(fromFeet, fromFeet) / 7.0) * uFigure.w;
+  }
 
   // Fired clay: each brick its own colour, some burnt darker.
   vec3 clay = mix(vec3(0.112, 0.064, 0.080), vec3(0.215, 0.110, 0.108), vSeed);
@@ -297,6 +336,7 @@ void main() {
   vec3 R = reflect(-V, N);
   float mirror = fres * mix(0.34, 1.0, wet) * (isTop > 0.5 ? 1.0 : 0.3) * (0.4 + 0.6 * ao);
   col = mix(col, skyColor(R), clamp(mirror, 0.0, 1.0));
+  col *= mix(0.58, 1.0, figureShadow);
 
   // Gold light falling on the bricks around it, and streaked across the wet.
   for (int i = 0; i < 2; i++) {
@@ -321,13 +361,182 @@ void main() {
   }
   col += emissive + vec3(0.050, 0.026, 0.012) * isTop * isName;
 
-  // Haze thickens with distance and pools low to the ground.
-  vec3 dir = -V;
-  vec3 hazeDir = normalize(vec3(dir.x, max(dir.y, 0.015), dir.z));
-  float height = exp(-max(vP.y, 0.0) * 0.045);
-  float column = 1.0 - smoothstep(0.08, 0.5, -dir.y);
-  float fog = (1.0 - exp(-pow(dist * uFog, 1.7) * (0.55 + 0.45 * height))) * (0.08 + 0.92 * column);
-  outColor = vec4(mix(col, skyColor(hazeDir), clamp(fog, 0.0, 1.0)), 1.0);
+  outColor = vec4(withHaze(col, V, dist, vP.y), 1.0);
+}
+`;
+
+/** The block figure: small blocks that rise out of the ground, then stand, walk and lift. */
+export const FIGURE_VS = /* glsl */ `#version 300 es
+precision highp float;
+layout(location = 0) in vec3 aPos;
+layout(location = 1) in vec3 aNormal;
+layout(location = 2) in vec2 aUv;
+layout(location = 3) in vec3 iCell;
+layout(location = 4) in vec4 iColor;  // colour, and how open the block's surroundings are
+layout(location = 5) in vec2 iMeta;   // which part it belongs to, seed
+layout(location = 6) in vec3 iFrom;   // where an arm block starts when his arms come undone
+
+uniform mat4 uVP;
+uniform vec3 uAt;
+uniform float uVoxel;
+uniform float uRows;
+uniform float uBuild;
+uniform float uBreath;
+uniform float uBlink;
+uniform float uYaw;
+uniform vec3 uLook;   // his head: turned, tipped, tilted
+uniform float uBend;
+uniform float uFree;
+uniform float uShrug;
+uniform float uInward;
+uniform vec2 uArms;   // his right, his left
+uniform vec2 uLegs;   // his right, his left
+
+out vec3 vP;
+out vec3 vN;
+out vec3 vColor;
+out vec2 vUv;
+flat out float vSeed;
+flat out float vOpen;
+
+const float NECK = ${NECK_ROW.toFixed(1)};
+const float HIP = ${HIP_ROW.toFixed(1)};
+const float SHOULDER = ${SHOULDER_ROW.toFixed(1)};
+const float SHOULDER_X = ${SHOULDER_X.toFixed(1)};
+
+vec3 turnY(vec3 v, float a) {
+  float c = cos(a), s = sin(a);
+  return vec3(v.x * c + v.z * s, v.y, -v.x * s + v.z * c);
+}
+vec3 turnX(vec3 v, float a) {
+  float c = cos(a), s = sin(a);
+  return vec3(v.x, v.y * c - v.z * s, v.y * s + v.z * c);
+}
+vec3 turnZ(vec3 v, float a) {
+  float c = cos(a), s = sin(a);
+  return vec3(v.x * c - v.y * s, v.x * s + v.y * c, v.z);
+}
+
+void main() {
+  float part = iMeta.x;
+  float seed = iMeta.y;
+  bool head = part > 0.5 && part < 2.5;
+  bool folded = part > 2.5 && part < 3.5;
+  bool arm = part > 3.5 && part < 5.5;
+  bool leg = part > 5.5;
+
+  // Laid from the ground up, like a course of bricks, each block arriving a moment apart.
+  float start = (iCell.y / uRows) * 0.72 + seed * 0.14;
+  float built = smoothstep(start, start + 0.14, uBuild);
+  float size = built;
+  vec3 cell = iCell;
+  // When his arms come undone their blocks fly from one arrangement to the other.
+  if (folded) size *= 1.0 - smoothstep(seed * 0.35, seed * 0.35 + 0.3, uFree);
+  if (arm) {
+    float moved = smoothstep(0.2 + seed * 0.35, 0.55 + seed * 0.45, uFree);
+    size *= smoothstep(0.0, 0.25, moved);
+    cell = mix(iFrom, iCell, moved);
+  }
+  vec3 p = cell + aPos * size;
+  p.y -= (1.0 - built) * 7.0;
+  vec3 n = aNormal;
+
+  if (head) {
+    vec3 neck = vec3(0.0, NECK, 0.0);
+    p = neck + turnY(turnX(turnZ(p - neck, uLook.z), uLook.y), uLook.x);
+    n = turnY(turnX(turnZ(n, uLook.z), uLook.y), uLook.x);
+  } else if (arm) {
+    float side = part < 4.5 ? -1.0 : 1.0;
+    float swing = part < 4.5 ? uArms.x : uArms.y;
+    vec3 shoulder = vec3(side * SHOULDER_X, SHOULDER, 0.0);
+    p = shoulder + turnX(turnZ(p - shoulder, -side * uInward), swing) + vec3(0.0, uShrug, 0.0);
+    n = turnX(turnZ(n, -side * uInward), swing);
+  } else if (leg) {
+    vec3 hip = vec3(0.0, HIP, 0.0);
+    float swing = part < 6.5 ? uLegs.x : uLegs.y;
+    p = hip + turnX(p - hip, swing);
+    n = turnX(n, swing);
+  }
+  if (!leg) {
+    // Only the top half breathes and bends; his feet stay where they are.
+    p.y += uBreath * (arm ? 1.0 : smoothstep(13.0, 26.0, iCell.y));
+    vec3 hip = vec3(0.0, HIP, 0.0);
+    p = hip + turnX(p - hip, uBend);
+    n = turnX(n, uBend);
+  }
+  p = turnY(p, uYaw);
+  n = turnY(n, uYaw);
+
+  vec3 world = uAt + vec3(p.x, p.y + 0.5, p.z) * uVoxel;
+  vP = world;
+  vN = n;
+  vUv = aUv;
+  vSeed = seed;
+  vOpen = iColor.a;
+  // A blink: the eye blocks take the colour of his eyelids for a moment.
+  vColor = part > 1.5 && part < 2.5 && uBlink > 0.5 ? vec3(0.47, 0.25, 0.19) : iColor.rgb;
+  gl_Position = uVP * vec4(world, 1.0);
+}
+`;
+
+export const FIGURE_FS = /* glsl */ `#version 300 es
+precision highp float;
+in vec3 vP;
+in vec3 vN;
+in vec3 vColor;
+in vec2 vUv;
+flat in float vSeed;
+flat in float vOpen;
+
+uniform vec3 uCam;
+uniform vec4 uGoldA;
+uniform vec4 uGoldB;
+out vec4 outColor;
+${SKY}
+${HAZE}
+const vec3 GOLD = vec3(1.0, 0.70, 0.27);
+
+void main() {
+  vec3 toCam = uCam - vP;
+  float dist = length(toCam);
+  vec3 V = toCam / dist;
+  vec3 N = normalize(vN);
+
+  // Fired like the bricks: every block its own shade, with a dark joint around it.
+  vec3 base = mix(vColor, vec3(0.2, 0.11, 0.11), 0.08) * (0.86 + 0.28 * vSeed);
+  vec2 e = min(vUv, 1.0 - vUv);
+  float w = fwidth(vUv.x) + fwidth(vUv.y);
+  float joint = smoothstep(0.0, 0.09 + w, min(e.x, e.y));
+  joint = mix(joint, 0.86, smoothstep(0.22, 0.6, w));
+  base *= 0.7 + 0.3 * joint;
+
+  // The same dusk as the world: low sun behind him, blue sky above. He also catches what comes
+  // back off the wet ground, which is what lets his face read with the sun at his back.
+  // Anything facing up or towards the sun takes the last warm light, so his edges glow.
+  float ndl = max(dot(N, uSun), 0.0) + max(N.y, 0.0) * 0.28;
+  vec3 sunLight = vec3(1.05, 0.56, 0.36) * mix(1.0, 0.25, uNight);
+  vec3 ambient = mix(vec3(0.085, 0.060, 0.085), mix(vec3(0.27, 0.27, 0.66), vec3(0.10, 0.11, 0.30), uNight), 0.5 + 0.5 * N.y);
+  vec3 bounceDir = normalize(vec3(0.18, 0.28, 0.94));
+  vec3 bounce = mix(vec3(0.34, 0.235, 0.215), vec3(0.14, 0.115, 0.18), uNight) * (max(dot(N, bounceDir), 0.0) * 0.85 + 0.15);
+  float ground = mix(0.62, 1.0, smoothstep(0.0, 3.5, vP.y));
+  vec3 col = base * ((ambient + bounce) * vOpen * ground + sunLight * ndl * 1.5);
+
+  float ndv = max(dot(N, V), 0.0);
+  float fres = 0.03 + 0.97 * pow(1.0 - ndv, 5.0);
+  col = mix(col, skyColor(reflect(-V, N)), clamp(fres * 0.1, 0.0, 1.0));
+
+  // Gold light falls on him as it falls on everything nearby.
+  for (int i = 0; i < 2; i++) {
+    vec4 g = i == 0 ? uGoldA : uGoldB;
+    if (g.w <= 0.0) continue;
+    vec3 L = g.xyz - vP;
+    float d2 = dot(L, L);
+    vec3 Ln = L / sqrt(max(d2, 0.0001));
+    float wrap = max(dot(N, Ln), 0.0) * 0.8 + 0.2;
+    col += base * GOLD * wrap * g.w * 4.0 / (1.0 + d2 * 0.05);
+  }
+
+  outColor = vec4(withHaze(col, V, dist, vP.y), 1.0);
 }
 `;
 

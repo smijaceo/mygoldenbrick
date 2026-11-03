@@ -53,7 +53,7 @@ search works, but its component code is paid and nothing there beat the app's ow
 
 ## How it is built
 
-- Plain WebGL2 in one lazily loaded chunk (`engine.ts`, about 14 KB gzipped). No 3D library, no new dependencies.
+- Plain WebGL2 in one lazily loaded chunk (`engine.ts`, about 20 KB gzipped). No 3D library, no new dependencies.
 - One draw call of instanced bricks. Heights run on a spring simulation in JavaScript.
 - Soft shadows and contact shading are worked out from the height map, so they cost the same however many bricks
   there are.
@@ -83,3 +83,14 @@ search works, but its component code is paid and nothing there beat the app's ow
 - `web/public/prototype/home-dusk.jpg` is an Unsplash sample photo. Replace or license-check before launch.
 - The logo is a 128 px PNG. It needs a vector version for large use.
 - `web/public/prototype/poster-*.jpg` are captures of the live scene. Re-capture whenever its look changes.
+
+## The block figure
+
+Mike Bjork stands in the world as about 2,500 small blocks (`figure.ts`), lit by the same dusk as the bricks,
+with a shadow worked out directly because he is too slim for the height-map shadow to catch. He is drawn from
+his portrait, which is reference only: the photo itself is not shipped.
+
+- After the opening he walks to the gold brick, lifts it overhead, puts it back and walks home. This plays once
+  by itself, and again whenever someone hovers over him or taps him. Hovering while he holds it keeps it up.
+- It doesn't play by itself if the visitor has already typed or scrolled, and never with reduced motion.
+- The routine is a plain function of time (`poseAt`), tested for smoothness and for the brick staying in his hands.
