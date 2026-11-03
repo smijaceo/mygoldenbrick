@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: "Website" };
 export default async function WebsitePage({ searchParams }: PageProps<"/app/website">) {
   const agent = await requireAgent();
   const { welcome } = await searchParams;
-  const site = getSite(agent.id);
+  const site = await getSite(agent.id);
 
   return (
     <>

@@ -10,7 +10,7 @@ export const metadata: Metadata = { title: "Pipeline" };
 
 export default async function PipelinePage() {
   const agent = await requireAgent();
-  const all = listLeads(agent.id);
+  const all = await listLeads(agent.id);
   const leads = all.map((l) => ({
     id: l.id,
     name: l.name,

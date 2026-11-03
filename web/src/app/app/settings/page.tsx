@@ -25,7 +25,7 @@ function Row({ id, title, children, about }: { id: string; title: string; about:
 
 export default async function SettingsPage() {
   const agent = await requireAgent();
-  const outbox = listOutbox(agent.id);
+  const outbox = await listOutbox(agent.id);
 
   return (
     <>

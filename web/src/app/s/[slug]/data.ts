@@ -5,7 +5,7 @@ import { getPublicSite } from "@/lib/sites";
 
 /** Loads an agent's public site once per request; 404s for unknown slugs. */
 export const loadSite = cache(async (slug: string) => {
-  const site = getPublicSite(slug);
+  const site = await getPublicSite(slug);
   if (!site) notFound();
   return site;
 });

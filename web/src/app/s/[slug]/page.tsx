@@ -13,9 +13,9 @@ export default async function SiteHome({ params }: PageProps<"/s/[slug]">) {
   const { slug } = await params;
   const { agent, site, testimonials } = await loadSite(slug);
   const base = `/s/${slug}`;
-  let homes = getFeaturedListings(agent.id).filter((l) => l.status === "active").slice(0, 6);
+  let homes = (await getFeaturedListings(agent.id)).filter((l) => l.status === "active").slice(0, 6);
   const showingNewest = homes.length === 0;
-  if (showingNewest) homes = searchListings({ sort: "newest" }, 6);
+  if (showingNewest) homes = await searchListings({ sort: "newest" }, 6);
   const first = agent.name.split(" ")[0];
 
   return (

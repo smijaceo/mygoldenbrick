@@ -28,7 +28,7 @@ export default async function SearchPage({ params, searchParams }: PageProps<"/s
     type: PROPERTY_TYPES.includes(str("type")) ? str("type") : undefined,
     sort: (["newest", "price-asc", "price-desc", "size"] as const).find((s) => s === str("sort")) ?? "newest",
   };
-  const listings = searchListings(filters);
+  const listings = await searchListings(filters);
   const hasFilters = Boolean(filters.q || filters.minPrice || filters.maxPrice || filters.beds || filters.baths || filters.type);
 
   return (

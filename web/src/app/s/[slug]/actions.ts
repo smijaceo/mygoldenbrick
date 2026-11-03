@@ -16,7 +16,7 @@ export type LeadFormState =
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function submitLead(slug: string, _: LeadFormState, form: FormData): Promise<LeadFormState> {
-  const site = getPublicSite(slug);
+  const site = await getPublicSite(slug);
   if (!site) return { ok: false, error: "This website isn't available." };
 
   const str = (k: string, max: number) => String(form.get(k) ?? "").trim().slice(0, max);
@@ -31,7 +31,7 @@ export async function submitLead(slug: string, _: LeadFormState, form: FormData)
   if (str("website", 200)) return { ok: true, message: "Thanks! We'll be in touch soon." };
 
   const ip = await clientIp();
-  if (!allow(`lead-ip:${ip}`, 10, 3600) || !allow(`lead-site:${site.agent.id}`, 300, 86400)) {
+  if (!(await allow(`lead-ip:${ip}`, 10, 3600)) || !(await allow(`lead-site:${site.agent.id}`, 300, 86400))) {
     return { ok: false, error: "Too many messages from here. Wait an hour, or call instead.", values };
   }
 
@@ -39,7 +39,7 @@ export async function submitLead(slug: string, _: LeadFormState, form: FormData)
   if (!EMAIL.test(values.email)) return { ok: false, error: "Please add a valid email so we can reply.", values };
 
   const listingId = Number(form.get("listingId")) || null;
-  if (listingId && !getListing(listingId)) return { ok: false, error: "That home is no longer available.", values };
+  if (listingId && !(await getListing(listingId))) return { ok: false, error: "That home is no longer available.", values };
 
   const tourDate = str("tourDate", 10);
   const isTour = Boolean(tourDate);
@@ -48,7 +48,7 @@ export async function submitLead(slug: string, _: LeadFormState, form: FormData)
   }
 
   const source: LeadSource = isTour ? "tour" : listingId ? "listing" : "contact";
-  createLead({
+  await createLead({
     agentId: site.agent.id,
     name: values.name,
     email: values.email,

@@ -57,9 +57,9 @@ export default async function ListingsPage({ searchParams }: PageProps<"/app/lis
   const agent = await requireAgent();
   const sp = await searchParams;
   const q = typeof sp.q === "string" ? sp.q : "";
-  const featuredIds = getFeaturedIds(agent.id);
-  const featured = getFeaturedListings(agent.id);
-  const results = searchListings({ q }, 60);
+  const featuredIds = await getFeaturedIds(agent.id);
+  const featured = await getFeaturedListings(agent.id);
+  const results = await searchListings({ q }, 60);
 
   return (
     <>

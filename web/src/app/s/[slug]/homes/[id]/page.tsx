@@ -10,7 +10,7 @@ import { LeadForm } from "../../lead-form";
 import { AgentAvatar, ListingCard, StatusTag, statusLabel } from "../../parts";
 
 export async function generateMetadata({ params }: PageProps<"/s/[slug]/homes/[id]">): Promise<Metadata> {
-  const listing = getListing(Number((await params).id));
+  const listing = await getListing(Number((await params).id));
   if (!listing) return {};
   return {
     title: `${listing.street}, ${listing.city}`,
@@ -22,9 +22,9 @@ export async function generateMetadata({ params }: PageProps<"/s/[slug]/homes/[i
 export default async function HomePage({ params }: PageProps<"/s/[slug]/homes/[id]">) {
   const { slug, id } = await params;
   const { agent, site } = await loadSite(slug);
-  const listing = getListing(Number(id));
+  const listing = await getListing(Number(id));
   if (!listing) notFound();
-  const similar = similarListings(listing);
+  const similar = await similarListings(listing);
   const [main, ...rest] = listing.photos;
   const listedDaysAgo = daysSince(listing.listed_at);
   const status = statusLabel(listing);

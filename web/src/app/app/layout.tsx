@@ -15,7 +15,7 @@ export const metadata: Metadata = { title: { default: "Today", template: "%s | i
  */
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const agent = await requireAgent();
-  const { unread } = leadCounts(agent.id);
+  const { unread } = await leadCounts(agent.id);
 
   return (
     <div className="min-h-dvh bg-ground text-ink">

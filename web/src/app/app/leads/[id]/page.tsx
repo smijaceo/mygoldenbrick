@@ -16,7 +16,7 @@ import { StageSelect } from "../stage-select";
 
 export async function generateMetadata({ params }: PageProps<"/app/leads/[id]">): Promise<Metadata> {
   const agent = await requireAgent();
-  const lead = getLead(agent.id, Number((await params).id));
+  const lead = await getLead(agent.id, Number((await params).id));
   return { title: lead?.name ?? "Lead" };
 }
 
@@ -31,13 +31,13 @@ const EVENT_ICONS = {
 export default async function LeadPage({ params }: PageProps<"/app/leads/[id]">) {
   const agent = await requireAgent();
   const id = Number((await params).id);
-  const lead = getLead(agent.id, id);
+  const lead = await getLead(agent.id, id);
   if (!lead) notFound();
-  if (lead.unread) markLeadRead(agent.id, id);
+  if (lead.unread) await markLeadRead(agent.id, id);
 
-  const events = getLeadEvents(id);
-  const tasks = listLeadTasks(agent.id, id);
-  const listing = lead.listing_id ? getListing(lead.listing_id) : undefined;
+  const events = await getLeadEvents(id);
+  const tasks = await listLeadTasks(agent.id, id);
+  const listing = lead.listing_id ? await getListing(lead.listing_id) : undefined;
   const firstName = lead.name.split(" ")[0];
   const received = parseDb(lead.created_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 

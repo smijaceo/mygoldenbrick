@@ -11,14 +11,14 @@ const WAITING_CAP = 5;
 
 export default async function TodayPage() {
   const agent = await requireAgent();
-  const waiting = listLeads(agent.id).filter((l) => l.unread);
-  const tasks = listOpenTasks(agent.id);
+  const waiting = (await listLeads(agent.id)).filter((l) => l.unread);
+  const tasks = await listOpenTasks(agent.id);
   const today = todayIso();
   const dueNow = tasks.filter((t) => t.due_date <= today);
-  const traffic = trafficSummary(agent.id);
+  const traffic = await trafficSummary(agent.id);
   // The figures count the last 7 days, so the chart draws the same 7.
   const week = traffic.daily.slice(-7);
-  const activity = recentActivity(agent.id, 6);
+  const activity = await recentActivity(agent.id, 6);
   const date = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
 
   const finding = [

@@ -20,13 +20,13 @@ export default async function LeadsPage({ searchParams }: PageProps<"/app/leads"
   const openId = Number(typeof sp.lead === "string" ? sp.lead : "") || 0;
 
   // Counts follow the search, so each tab says how many rows it will show.
-  const matching = listLeads(agent.id, { q });
+  const matching = await listLeads(agent.id, { q });
   const leads = stage ? matching.filter((l) => l.stage === stage) : matching;
-  const all = q ? listLeads(agent.id) : matching;
+  const all = q ? await listLeads(agent.id) : matching;
 
   // The lead opened in the side panel (desktop); opening it marks it read, as the full page does.
-  const open = openId ? getLead(agent.id, openId) : undefined;
-  if (open?.unread) markLeadRead(agent.id, open.id);
+  const open = openId ? await getLead(agent.id, openId) : undefined;
+  if (open?.unread) await markLeadRead(agent.id, open.id);
   const unread = all.filter((l) => l.unread && l.id !== open?.id).length;
   const people = all.length === 1 ? "1 person" : `${all.length} people`;
 
@@ -118,7 +118,7 @@ export default async function LeadsPage({ searchParams }: PageProps<"/app/leads"
 
         {open && (
           <div className="hidden lg:block">
-            <LeadPanel lead={open} listing={open.listing_id ? getListing(open.listing_id) : undefined} events={getLeadEvents(open.id)} closeHref={hrefFor({})} />
+            <LeadPanel lead={open} listing={open.listing_id ? await getListing(open.listing_id) : undefined} events={await getLeadEvents(open.id)} closeHref={hrefFor({})} />
           </div>
         )}
       </div>

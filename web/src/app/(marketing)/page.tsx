@@ -20,8 +20,8 @@ export const metadata: Metadata = {
   description: "Build your real estate presence and keep every buyer inquiry in one place.",
 };
 
-export default function Landing() {
-  const listings: BuilderListing[] = searchListings({ sort: "newest" }, 12).map((l) => ({
+export default async function Landing() {
+  const listings: BuilderListing[] = (await searchListings({ sort: "newest" }, 12)).map((l) => ({
     id: l.id,
     photo: sized(l.photos[0], 600),
     price: money(l.price),

@@ -3,7 +3,7 @@ import { all, get, run } from "./db";
 import type { Listing } from "./types";
 
 /**
- * The listing source. v1 reads fictional sample listings from the local database.
+ * The listing source. v1 reads fictional sample listings from the database.
  * To connect a real IDX/MLS feed later, replace the bodies of these functions.
  * Also update the few places that join the `listings` table directly for a
  * street name: leads.ts (listLeads, getLead), analytics.ts (topListings),
@@ -32,7 +32,7 @@ const SORTS: Record<NonNullable<ListingFilters["sort"]>, string> = {
   size: "sqft DESC",
 };
 
-export function searchListings(filters: ListingFilters, limit = 200): Listing[] {
+export async function searchListings(filters: ListingFilters, limit = 200): Promise<Listing[]> {
   const where: string[] = [];
   const params: (string | number)[] = [];
   if (filters.q) {
@@ -47,46 +47,47 @@ export function searchListings(filters: ListingFilters, limit = 200): Listing[] 
   where.push("status = ?");
   params.push(filters.status || "active");
   const order = SORTS[filters.sort ?? "newest"] ?? SORTS.newest;
-  return all<ListingRow>(
+  const rows = await all<ListingRow>(
     `SELECT * FROM listings WHERE ${where.join(" AND ")} ORDER BY ${order} LIMIT ?`,
     ...params, limit,
-  ).map(toListing);
+  );
+  return rows.map(toListing);
 }
 
-export function getListing(id: number): Listing | undefined {
-  const row = get<ListingRow>("SELECT * FROM listings WHERE id = ?", id);
+export async function getListing(id: number): Promise<Listing | undefined> {
+  const row = await get<ListingRow>("SELECT * FROM listings WHERE id = ?", id);
   return row && toListing(row);
 }
 
-export function getFeaturedListings(agentId: number): Listing[] {
-  return all<ListingRow>(
+export async function getFeaturedListings(agentId: number): Promise<Listing[]> {
+  const rows = await all<ListingRow>(
     `SELECT l.* FROM featured_listings f JOIN listings l ON l.id = f.listing_id
      WHERE f.agent_id = ? ORDER BY f.created_at DESC, l.id`,
     agentId,
-  ).map(toListing);
-}
-
-export function getFeaturedIds(agentId: number): Set<number> {
-  return new Set(
-    all<{ listing_id: number }>("SELECT listing_id FROM featured_listings WHERE agent_id = ?", agentId)
-      .map((r) => r.listing_id),
   );
+  return rows.map(toListing);
 }
 
-export function setFeatured(agentId: number, listingId: number, featured: boolean) {
+export async function getFeaturedIds(agentId: number): Promise<Set<number>> {
+  const rows = await all<{ listing_id: number }>("SELECT listing_id FROM featured_listings WHERE agent_id = ?", agentId);
+  return new Set(rows.map((r) => r.listing_id));
+}
+
+export async function setFeatured(agentId: number, listingId: number, featured: boolean) {
   if (featured) {
-    run("INSERT OR IGNORE INTO featured_listings (agent_id, listing_id) VALUES (?, ?)", agentId, listingId);
+    await run("INSERT OR IGNORE INTO featured_listings (agent_id, listing_id) VALUES (?, ?)", agentId, listingId);
   } else {
-    run("DELETE FROM featured_listings WHERE agent_id = ? AND listing_id = ?", agentId, listingId);
+    await run("DELETE FROM featured_listings WHERE agent_id = ? AND listing_id = ?", agentId, listingId);
   }
 }
 
-export function similarListings(listing: Listing, limit = 3): Listing[] {
-  return all<ListingRow>(
+export async function similarListings(listing: Listing, limit = 3): Promise<Listing[]> {
+  const rows = await all<ListingRow>(
     `SELECT * FROM listings WHERE id != ? AND status = 'active'
      ORDER BY (neighborhood = ?) DESC, ABS(price - ?) LIMIT ?`,
     listing.id, listing.neighborhood, listing.price, limit,
-  ).map(toListing);
+  );
+  return rows.map(toListing);
 }
 
 export const PROPERTY_TYPES = ["Single Family", "Townhome", "Condo"];

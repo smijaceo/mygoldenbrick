@@ -3,9 +3,9 @@ import { getFeaturedListings, searchListings } from "@/lib/listings";
 import { ListingCard } from "./parts";
 
 /** Three homes for sale (the agent's featured ones first), so every page has a next step for buyers. */
-export function HomesStrip({ agentId, slug, title }: { agentId: number; slug: string; title: string }) {
-  let homes = getFeaturedListings(agentId).filter((l) => l.status === "active").slice(0, 3);
-  if (homes.length < 3) homes = [...homes, ...searchListings({ sort: "newest" }, 6).filter((l) => !homes.some((h) => h.id === l.id))].slice(0, 3);
+export async function HomesStrip({ agentId, slug, title }: { agentId: number; slug: string; title: string }) {
+  let homes = (await getFeaturedListings(agentId)).filter((l) => l.status === "active").slice(0, 3);
+  if (homes.length < 3) homes = [...homes, ...(await searchListings({ sort: "newest" }, 6)).filter((l) => !homes.some((h) => h.id === l.id))].slice(0, 3);
   return (
     <section aria-labelledby="strip-heading" className="mx-auto max-w-6xl px-5 py-16 sm:px-10 lg:py-20">
       <div className="flex flex-wrap items-baseline justify-between gap-4">

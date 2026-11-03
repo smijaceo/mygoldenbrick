@@ -12,10 +12,10 @@ const SESSION_DAYS = 30;
 const sha256 = (value: string) => createHash("sha256").update(value).digest("hex");
 
 export async function createSession(agentId: number) {
-  run("DELETE FROM sessions WHERE expires_at < ?", new Date().toISOString());
+  await run("DELETE FROM sessions WHERE expires_at < ?", new Date().toISOString());
   const token = randomBytes(32).toString("base64url");
   const expires = new Date(Date.now() + SESSION_DAYS * 86400000);
-  run(
+  await run(
     "INSERT INTO sessions (token_hash, agent_id, expires_at) VALUES (?, ?, ?)",
     sha256(token), agentId, expires.toISOString(),
   );
@@ -34,21 +34,21 @@ export async function createSession(agentId: number) {
 export async function destroySession() {
   const jar = await cookies();
   const token = jar.get(SESSION_COOKIE)?.value;
-  if (token) run("DELETE FROM sessions WHERE token_hash = ?", sha256(token));
+  if (token) await run("DELETE FROM sessions WHERE token_hash = ?", sha256(token));
   jar.delete(SESSION_COOKIE);
 }
 
 /** Ends every session for this agent except the one making the request. */
 export async function signOutOtherSessions(agentId: number) {
   const token = (await cookies()).get(SESSION_COOKIE)?.value ?? "";
-  run("DELETE FROM sessions WHERE agent_id = ? AND token_hash != ?", agentId, sha256(token));
+  await run("DELETE FROM sessions WHERE agent_id = ? AND token_hash != ?", agentId, sha256(token));
 }
 
 /** The signed-in agent, or null. Cached for the duration of one request. */
 export const getCurrentAgent = cache(async (): Promise<Agent | null> => {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
   if (!token) return null;
-  const agent = get<Agent & { expires_at: string }>(
+  const agent = await get<Agent & { expires_at: string }>(
     `SELECT a.id, a.email, a.name, a.slug, s.expires_at
      FROM sessions s JOIN agents a ON a.id = s.agent_id
      WHERE s.token_hash = ?`,
